@@ -1,6 +1,6 @@
 // @flow strict-local
 
-import type {Diagnostic} from '@parcel/diagnostic';
+import type {Diagnostic, DiagnosticWithLevel} from '@parcel/diagnostic';
 import type {ContentKey, NodeId} from '@parcel/graph';
 import type {Async, Symbol, Meta} from '@parcel/types';
 import type {SharedReference} from '@parcel/workers';
@@ -9,6 +9,7 @@ import type {
   AssetGroup,
   AssetNode,
   AssetRequestInput,
+  AssetRequestResult,
   Dependency,
   DependencyNode,
   Entry,
@@ -53,6 +54,7 @@ type AssetGraphRequestResult = {|
   assetGraph: AssetGraph,
   changedAssets: Map<string, Asset>,
   assetRequests: Array<AssetGroup>,
+  diagnostics: Map<ContentKey, Array<DiagnosticWithLevel>>,
 |};
 
 type RunInput = {|
@@ -78,7 +80,7 @@ export default function createAssetGraphRequest(
         await input.api.getPreviousResult<AssetGraphRequestResult>();
 
       let builder = new AssetGraphBuilder(input, prevResult);
-      let assetGraphRequest = await await builder.build();
+      let assetGraphRequest = await builder.build();
 
       // early break for incremental bundling if production or flag is off;
       if (
@@ -114,6 +116,7 @@ export class AssetGraphBuilder {
   shouldBuildLazily: boolean;
   requestedAssetIds: Set<string>;
   isSingleChangeRebuild: boolean;
+  diagnostics: Map<ContentKey, Array<DiagnosticWithLevel>>;
 
   constructor(
     {input, api, options}: RunInput,
@@ -143,11 +146,19 @@ export class AssetGraphBuilder {
     this.cacheKey = hashString(
       `${PARCEL_VERSION}${name}${JSON.stringify(entries) ?? ''}${options.mode}`,
     );
+    this.diagnostics = prevResult?.diagnostics ?? new Map();
 
     this.isSingleChangeRebuild =
       api.getInvalidSubRequests().filter(req => req.type === 'asset_request')
         .length === 1;
     this.queue = new PromiseQueue();
+
+    this.assetGraph.onNodeRemoved = id => {
+      let node = nullthrows(this.assetGraph.getNode(id));
+      if (node.type === 'asset') {
+        this.diagnostics.delete(node.value.id);
+      }
+    };
   }
 
   async build(): Promise<AssetGraphRequestResult> {
@@ -193,6 +204,7 @@ export class AssetGraphBuilder {
       {
         assetGraph: this.assetGraph,
         changedAssets: new Map(),
+        diagnostics: this.diagnostics,
         assetRequests: [],
       },
       this.cacheKey,
@@ -240,6 +252,7 @@ export class AssetGraphBuilder {
       assetGraph: this.assetGraph,
       changedAssets: this.changedAssets,
       assetRequests: this.assetRequests,
+      diagnostics: this.diagnostics,
     };
   }
 
@@ -987,10 +1000,10 @@ export class AssetGraphBuilder {
       optionsRef: this.optionsRef,
       isSingleChangeRebuild: this.isSingleChangeRebuild,
     });
-    let assets = await this.api.runRequest<AssetRequestInput, Array<Asset>>(
-      request,
-      {force: true},
-    );
+    let {assets, diagnostics} = await this.api.runRequest<
+      AssetRequestInput,
+      AssetRequestResult,
+    >(request, {force: true});
 
     if (assets != null) {
       for (let asset of assets) {
@@ -1011,6 +1024,15 @@ export class AssetGraphBuilder {
       this.assetGraph.resolveAssetGroup(input, assets, request.id);
     } else {
       this.assetGraph.safeToIncrementallyBundle = false;
+    }
+
+    for (let asset of assets) {
+      this.diagnostics.delete(asset.id);
+    }
+    if (diagnostics) {
+      for (let [asset, diagnostic] of diagnostics) {
+        this.diagnostics.set(asset, diagnostic);
+      }
     }
 
     this.isSingleChangeRebuild = false;

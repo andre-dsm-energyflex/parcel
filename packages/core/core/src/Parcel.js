@@ -269,7 +269,7 @@ export default class Parcel {
         signal,
       });
 
-      let {bundleGraph, bundleInfo, changedAssets, assetRequests} =
+      let {bundleGraph, bundleInfo, changedAssets, diagnostics, assetRequests} =
         await this.#requestTracker.runRequest(request, {force: true});
 
       this.#requestedAssetIds.clear();
@@ -301,6 +301,7 @@ export default class Parcel {
           options,
         ),
         buildTime: Date.now() - startTime,
+        diagnostics,
         requestBundle: async bundle => {
           let bundleNode = bundleGraph._graph.getNodeByContentKey(bundle.id);
           invariant(bundleNode?.type === 'bundle', 'Bundle does not exist');
@@ -310,6 +311,7 @@ export default class Parcel {
             return {
               type: 'buildSuccess',
               changedAssets: new Map(),
+              diagnostics: [],
               bundleGraph: event.bundleGraph,
               buildTime: 0,
               requestBundle: event.requestBundle,

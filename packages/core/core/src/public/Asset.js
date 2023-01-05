@@ -21,6 +21,7 @@ import type {
   AssetSymbols as IAssetSymbols,
   BundleBehavior,
 } from '@parcel/types';
+import type {DiagnosticWithLevel} from '@parcel/diagnostic';
 import type {Asset as AssetValue, ParcelOptions} from '../types';
 
 import nullthrows from 'nullthrows';
@@ -277,6 +278,16 @@ export class MutableAsset extends BaseAsset implements IMutableAsset {
 
   addDependency(dep: DependencyOptions): string {
     return this.#asset.addDependency(dep);
+  }
+
+  addDiagnostic(
+    diagnostic: DiagnosticWithLevel | Array<DiagnosticWithLevel>,
+  ): void {
+    if (Array.isArray(diagnostic)) {
+      this.#asset.diagnostics.push(...diagnostic);
+    } else {
+      this.#asset.diagnostics.push(diagnostic);
+    }
   }
 
   invalidateOnFileChange(filePath: FilePath): void {

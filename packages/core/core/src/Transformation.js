@@ -32,6 +32,7 @@ import ThrowableDiagnostic, {
   escapeMarkdown,
   md,
   type Diagnostic,
+  type DiagnosticWithLevel,
 } from '@parcel/diagnostic';
 import {SOURCEMAP_EXTENSIONS} from '@parcel/utils';
 import {hashString} from '@parcel/hash';
@@ -83,6 +84,11 @@ type PostProcessFunc = (
   Array<UncommittedAsset>,
 ) => Promise<Array<UncommittedAsset> | null>;
 
+type TransformationCacheEntry = {|
+  $$raw: true,
+  assets: Array<AssetValue>,
+|};
+
 export type TransformationOpts = {|
   options: ParcelOptions,
   config: ParcelConfig,
@@ -93,6 +99,7 @@ export type TransformationOpts = {|
 export type TransformationResult = {|
   assets?: Array<AssetValue>,
   error?: Array<Diagnostic>,
+  diagnostics?: Map<string, Array<DiagnosticWithLevel>>,
   configRequests: Array<ConfigRequest>,
   invalidations: Array<RequestInvalidation>,
   invalidateOnFileCreate: Array<InternalFileCreateInvalidation>,
@@ -110,6 +117,7 @@ export default class Transformation {
   parcelConfig: ParcelConfig;
   invalidations: Map<string, RequestInvalidation>;
   invalidateOnFileCreate: Array<InternalFileCreateInvalidation>;
+  diagnostics: Map<string, Array<DiagnosticWithLevel>>;
   resolverRunner: ResolverRunner;
 
   constructor({request, options, config, workerApi}: TransformationOpts) {
@@ -127,6 +135,7 @@ export default class Transformation {
       options,
       previousDevDeps: request.devDeps,
     });
+    this.diagnostics = new Map();
 
     this.pluginOptions = new PluginOptions(
       optionsProxy(
@@ -210,17 +219,19 @@ export default class Transformation {
       ...this.resolverRunner.devDepRequests.values(),
     ]);
 
-    // $FlowFixMe because of $$raw
-    return {
-      $$raw: true,
+    let result = {
       assets,
       configRequests,
       // When throwing an error, this (de)serialization is done automatically by the WorkerFarm
       error: error ? anyToDiagnostic(error) : undefined,
+      diagnostics: this.diagnostics,
       invalidateOnFileCreate: this.invalidateOnFileCreate,
       invalidations: [...this.invalidations.values()],
       devDepRequests,
     };
+    // $FlowFixMe because of $$raw
+    result.$$raw = true;
+    return result;
   }
 
   async loadAsset(): Promise<UncommittedAsset> {
@@ -252,23 +263,26 @@ export default class Transformation {
     if (code != null) {
       idBase += hash;
     }
+
+    let value = createAsset(this.options.projectRoot, {
+      idBase,
+      filePath,
+      isSource,
+      type: path.extname(fromProjectPathRelative(filePath)).slice(1),
+      hash,
+      pipeline,
+      env,
+      query,
+      stats: {
+        time: 0,
+        size,
+      },
+      sideEffects,
+    });
+
     return new UncommittedAsset({
       idBase,
-      value: createAsset(this.options.projectRoot, {
-        idBase,
-        filePath,
-        isSource,
-        type: path.extname(fromProjectPathRelative(filePath)).slice(1),
-        hash,
-        pipeline,
-        env,
-        query,
-        stats: {
-          time: 0,
-          size,
-        },
-        sideEffects,
-      }),
+      value,
       options: this.options,
       content,
       invalidations: this.invalidations,
@@ -463,7 +477,9 @@ export default class Transformation {
         }
 
         try {
-          let transformerResults = await this.runTransformer(
+          let transformerResults: $ReadOnlyArray<
+            TransformerResult | UncommittedAsset,
+          > = await this.runTransformer(
             pipeline,
             asset,
             transformer.plugin,
@@ -474,18 +490,33 @@ export default class Transformation {
           );
 
           for (let result of transformerResults) {
-            if (result instanceof UncommittedAsset) {
-              resultingAssets.push(result);
-              continue;
+            let resultAsset =
+              result instanceof UncommittedAsset
+                ? result
+                : asset.createChildAsset(
+                    result,
+                    transformer.name,
+                    this.parcelConfig.filePath,
+                    transformer.configKeyPath,
+                  );
+
+            if (resultAsset.diagnostics && resultAsset.diagnostics.length > 0) {
+              // resultAsset.diagnostics contains the diagnostics added by this transformer. Add
+              // them to the map and clear the value because the resultAsset object will be passed
+              // to the next transformer in the pipeline.
+              let existing = this.diagnostics.get(resultAsset.value.id) ?? [];
+              this.diagnostics.set(
+                resultAsset.value.id,
+                existing.concat(
+                  resultAsset.diagnostics.map(d => ({
+                    ...d,
+                    origin: d.origin ?? transformer.name,
+                  })),
+                ),
+              );
+              resultAsset.diagnostics = [];
             }
-            resultingAssets.push(
-              asset.createChildAsset(
-                result,
-                transformer.name,
-                this.parcelConfig.filePath,
-                transformer.configKeyPath,
-              ),
-            );
+            resultingAssets.push(resultAsset);
           }
         } catch (e) {
           let diagnostic = errorToDiagnostic(e, {
@@ -560,7 +591,7 @@ export default class Transformation {
       return null;
     }
 
-    let cached = await this.options.cache.get<{|assets: Array<AssetValue>|}>(
+    let cached = await this.options.cache.get<TransformationCacheEntry>(
       cacheKey,
     );
     if (!cached) {
@@ -570,7 +601,7 @@ export default class Transformation {
     let cachedAssets = cached.assets;
 
     return Promise.all(
-      cachedAssets.map(async (value: AssetValue) => {
+      cachedAssets.map(async value => {
         let content =
           value.contentKey != null
             ? value.isLargeBlob
@@ -609,10 +640,13 @@ export default class Transformation {
       assets.map(asset => asset.commit(invalidationHash + pipelineHash)),
     );
 
-    this.options.cache.set(cacheKey, {
-      $$raw: true,
-      assets: assets.map(a => a.value),
-    });
+    this.options.cache.set(
+      cacheKey,
+      ({
+        $$raw: true,
+        assets: assets.map(a => a.value),
+      }: TransformationCacheEntry),
+    );
   }
 
   getCacheKey(

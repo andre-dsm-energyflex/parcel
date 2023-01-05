@@ -9,6 +9,7 @@ import type {
   PackageName,
   TransformerResult,
 } from '@parcel/types';
+import type {DiagnosticWithLevel} from '@parcel/diagnostic';
 import type {
   Asset,
   RequestInvalidation,
@@ -53,6 +54,7 @@ type UncommittedAssetOptions = {|
   idBase?: ?string,
   invalidations?: Map<string, RequestInvalidation>,
   fileCreateInvalidations?: Array<InternalFileCreateInvalidation>,
+  diagnostics?: Array<DiagnosticWithLevel>,
 |};
 
 export default class UncommittedAsset {
@@ -68,6 +70,7 @@ export default class UncommittedAsset {
   invalidations: Map<string, RequestInvalidation>;
   fileCreateInvalidations: Array<InternalFileCreateInvalidation>;
   generate: ?() => Promise<GenerateOutput>;
+  diagnostics: Array<DiagnosticWithLevel>;
 
   constructor({
     value,
@@ -79,6 +82,7 @@ export default class UncommittedAsset {
     idBase,
     invalidations,
     fileCreateInvalidations,
+    diagnostics,
   }: UncommittedAssetOptions) {
     this.value = value;
     this.options = options;
@@ -89,6 +93,7 @@ export default class UncommittedAsset {
     this.idBase = idBase;
     this.invalidations = invalidations || new Map();
     this.fileCreateInvalidations = fileCreateInvalidations || [];
+    this.diagnostics = diagnostics || [];
   }
 
   /*
@@ -429,6 +434,7 @@ export default class UncommittedAsset {
       idBase: this.idBase,
       invalidations: this.invalidations,
       fileCreateInvalidations: this.fileCreateInvalidations,
+      diagnostics: result.diagnostics,
     });
 
     let dependencies = result.dependencies;
