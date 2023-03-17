@@ -86,7 +86,7 @@ type PostProcessFunc = (
 
 type TransformationCacheEntry = {|
   $$raw: true,
-  assets: Array<AssetValue>,
+  assets: Array<[AssetValue, Array<DiagnosticWithLevel>]>,
 |};
 
 export type TransformationOpts = {|
@@ -117,7 +117,6 @@ export default class Transformation {
   parcelConfig: ParcelConfig;
   invalidations: Map<string, RequestInvalidation>;
   invalidateOnFileCreate: Array<InternalFileCreateInvalidation>;
-  diagnostics: Map<string, Array<DiagnosticWithLevel>>;
   resolverRunner: ResolverRunner;
 
   constructor({request, options, config, workerApi}: TransformationOpts) {
@@ -135,7 +134,6 @@ export default class Transformation {
       options,
       previousDevDeps: request.devDeps,
     });
-    this.diagnostics = new Map();
 
     this.pluginOptions = new PluginOptions(
       optionsProxy(
@@ -203,9 +201,25 @@ export default class Transformation {
       asset.value.pipeline,
     );
     let assets, error;
+    let diagnosticsAll = new Set();
+    let diagnosticsByAsset = new Map();
     try {
       let results = await this.runPipelines(pipeline, asset);
+
       assets = results.map(a => a.value);
+      // Deduplicate diagnostics across all assets, as returning multiple dependencies
+      // can lead to duplicates.
+      // TODO give diagnostics an ID as equality might break
+      for (let a of results) {
+        let assetDiagnostics = [];
+        for (let d of a.diagnostics) {
+          if (!diagnosticsAll.has(d)) {
+            assetDiagnostics.push(d);
+            diagnosticsAll.add(d);
+          }
+        }
+        diagnosticsByAsset.set(a.value.id, assetDiagnostics);
+      }
     } catch (e) {
       error = e;
     }
@@ -224,7 +238,7 @@ export default class Transformation {
       configRequests,
       // When throwing an error, this (de)serialization is done automatically by the WorkerFarm
       error: error ? anyToDiagnostic(error) : undefined,
-      diagnostics: this.diagnostics,
+      diagnostics: diagnosticsByAsset,
       invalidateOnFileCreate: this.invalidateOnFileCreate,
       invalidations: [...this.invalidations.values()],
       devDepRequests,
@@ -499,23 +513,6 @@ export default class Transformation {
                     this.parcelConfig.filePath,
                     transformer.configKeyPath,
                   );
-
-            if (resultAsset.diagnostics && resultAsset.diagnostics.length > 0) {
-              // resultAsset.diagnostics contains the diagnostics added by this transformer. Add
-              // them to the map and clear the value because the resultAsset object will be passed
-              // to the next transformer in the pipeline.
-              let existing = this.diagnostics.get(resultAsset.value.id) ?? [];
-              this.diagnostics.set(
-                resultAsset.value.id,
-                existing.concat(
-                  resultAsset.diagnostics.map(d => ({
-                    ...d,
-                    origin: d.origin ?? transformer.name,
-                  })),
-                ),
-              );
-              resultAsset.diagnostics = [];
-            }
             resultingAssets.push(resultAsset);
           }
         } catch (e) {
@@ -601,7 +598,7 @@ export default class Transformation {
     let cachedAssets = cached.assets;
 
     return Promise.all(
-      cachedAssets.map(async value => {
+      cachedAssets.map(async ([value, diagnostics]) => {
         let content =
           value.contentKey != null
             ? value.isLargeBlob
@@ -625,6 +622,7 @@ export default class Transformation {
           content,
           mapBuffer,
           ast,
+          diagnostics,
         });
       }),
     );
@@ -644,7 +642,7 @@ export default class Transformation {
       cacheKey,
       ({
         $$raw: true,
-        assets: assets.map(a => a.value),
+        assets: assets.map(a => [a.value, a.diagnostics]),
       }: TransformationCacheEntry),
     );
   }
@@ -859,13 +857,18 @@ export default class Transformation {
     let transfomerResult: Array<TransformerResult | MutableAsset> =
       // $FlowFixMe the returned IMutableAsset really is a MutableAsset
       await transformer.transform({
+        // TODO adjust diagnostic origin?
         asset: new MutableAsset(asset),
         config,
         options: pipeline.pluginOptions,
         resolve,
         logger,
       });
-    let results = await normalizeAssets(this.options, transfomerResult);
+    let results = await normalizeAssets(
+      this.options,
+      transfomerResult,
+      transformerName,
+    );
 
     // Create generate and postProcess function that can be called later
     asset.generate = (): Promise<GenerateOutput> => {
@@ -938,12 +941,25 @@ type TransformerWithNameAndConfig = {|
 function normalizeAssets(
   options,
   results: Array<TransformerResult | MutableAsset>,
+  transformerName: string,
 ): Array<TransformerResult | UncommittedAsset> {
   return results.map(result => {
-    if (result instanceof MutableAsset) {
-      return mutableAssetToUncommittedAsset(result);
+    let asset =
+      result instanceof MutableAsset
+        ? mutableAssetToUncommittedAsset(result)
+        : result;
+    if (asset.diagnostics) {
+      // $FlowFixMe[cannot-write]
+      asset.diagnostics = asset.diagnostics.map(d =>
+        d.origin != null
+          ? d
+          : {
+              ...d,
+              origin: transformerName,
+            },
+      );
     }
 
-    return result;
+    return asset;
   });
 }

@@ -434,7 +434,7 @@ export default class UncommittedAsset {
       idBase: this.idBase,
       invalidations: this.invalidations,
       fileCreateInvalidations: this.fileCreateInvalidations,
-      diagnostics: result.diagnostics,
+      diagnostics: [...this.diagnostics, ...(result.diagnostics ?? [])],
     });
 
     let dependencies = result.dependencies;
