@@ -19,6 +19,7 @@ import type {
   ParcelOptions,
   InternalFileCreateInvalidation,
   InternalDevDepOptions,
+  InternalDiagnosticWithLevel,
 } from './types';
 import type {LoadedPlugin} from './ParcelConfig';
 
@@ -32,7 +33,6 @@ import ThrowableDiagnostic, {
   escapeMarkdown,
   md,
   type Diagnostic,
-  type DiagnosticWithLevel,
 } from '@parcel/diagnostic';
 import {SOURCEMAP_EXTENSIONS} from '@parcel/utils';
 import {hashString} from '@parcel/hash';
@@ -55,7 +55,7 @@ import {
 import summarizeRequest from './summarizeRequest';
 import PluginOptions from './public/PluginOptions';
 import {PARCEL_VERSION, FILE_CREATE} from './constants';
-import {optionsProxy} from './utils';
+import {optionsProxy, toInternalDiagnosticWithLevel} from './utils';
 import {createConfig} from './InternalConfig';
 import {
   getConfigHash,
@@ -86,7 +86,7 @@ type PostProcessFunc = (
 
 type TransformationCacheEntry = {|
   $$raw: true,
-  assets: Array<[AssetValue, Array<DiagnosticWithLevel>]>,
+  assets: Array<[AssetValue, Array<InternalDiagnosticWithLevel>]>,
 |};
 
 export type TransformationOpts = {|
@@ -99,7 +99,7 @@ export type TransformationOpts = {|
 export type TransformationResult = {|
   assets?: Array<AssetValue>,
   error?: Array<Diagnostic>,
-  diagnostics?: Map<string, Array<DiagnosticWithLevel>>,
+  diagnostics?: Map<string, Array<InternalDiagnosticWithLevel>>,
   configRequests: Array<ConfigRequest>,
   invalidations: Array<RequestInvalidation>,
   invalidateOnFileCreate: Array<InternalFileCreateInvalidation>,
@@ -944,12 +944,9 @@ function normalizeAssets(
   transformerName: string,
 ): Array<TransformerResult | UncommittedAsset> {
   return results.map(result => {
-    let asset =
-      result instanceof MutableAsset
-        ? mutableAssetToUncommittedAsset(result)
-        : result;
-    if (asset.diagnostics) {
-      // $FlowFixMe[cannot-write]
+    let asset;
+    if (result instanceof MutableAsset) {
+      asset = mutableAssetToUncommittedAsset(result);
       asset.diagnostics = asset.diagnostics.map(d =>
         d.origin != null
           ? d
@@ -958,8 +955,18 @@ function normalizeAssets(
               origin: transformerName,
             },
       );
+    } else {
+      asset = result;
+      // $FlowFixMe[cannot-write]
+      asset.diagnostics = asset.diagnostics?.map(d =>
+        d.origin != null
+          ? d
+          : toInternalDiagnosticWithLevel(options.projectRoot, {
+              ...d,
+              origin: transformerName,
+            }),
+      );
     }
-
     return asset;
   });
 }

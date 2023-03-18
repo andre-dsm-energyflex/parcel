@@ -26,7 +26,10 @@ import ReporterRunner from './ReporterRunner';
 import dumpGraphToGraphViz from './dumpGraphToGraphViz';
 import resolveOptions from './resolveOptions';
 import {ValueEmitter} from '@parcel/events';
-import {registerCoreWithSerializer} from './utils';
+import {
+  registerCoreWithSerializer,
+  fromInternalDiagnosticWithLevel,
+} from './utils';
 import {AbortController} from 'abortcontroller-polyfill/dist/cjs-ponyfill';
 import {PromiseQueue} from '@parcel/utils';
 import ParcelConfig from './ParcelConfig';
@@ -301,7 +304,9 @@ export default class Parcel {
           options,
         ),
         buildTime: Date.now() - startTime,
-        diagnostics,
+        diagnostics: diagnostics.map(d =>
+          fromInternalDiagnosticWithLevel(options.projectRoot, d),
+        ),
         requestBundle: async bundle => {
           let bundleNode = bundleGraph._graph.getNodeByContentKey(bundle.id);
           invariant(bundleNode?.type === 'bundle', 'Bundle does not exist');

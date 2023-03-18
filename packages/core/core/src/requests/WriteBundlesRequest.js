@@ -3,9 +3,8 @@
 import type {ContentKey} from '@parcel/graph';
 import type {Async} from '@parcel/types';
 import type {SharedReference} from '@parcel/workers';
-import type {DiagnosticWithLevel} from '@parcel/diagnostic';
 import type {StaticRunOpts} from '../RequestTracker';
-import type {PackagedBundleInfo} from '../types';
+import type {InternalDiagnosticWithLevel, PackagedBundleInfo} from '../types';
 import type BundleGraph from '../BundleGraph';
 import type {BundleInfo} from '../PackagerRunner';
 
@@ -28,7 +27,7 @@ type RunInput<TResult> = {|
 
 type WriteBundlesRequestResult = {|
   bundleInfo: Map<string, PackagedBundleInfo>,
-  diagnostics: Array<DiagnosticWithLevel>,
+  diagnostics: Array<InternalDiagnosticWithLevel>,
 |};
 
 export type WriteBundlesRequest = {|

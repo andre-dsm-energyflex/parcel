@@ -3,10 +3,14 @@
 import type {FileSystem, FileOptions} from '@parcel/fs';
 import type {ContentKey} from '@parcel/graph';
 import type {Async, FilePath, Compressor} from '@parcel/types';
-import type {DiagnosticWithLevel} from '@parcel/diagnostic';
 
 import type {RunAPI, StaticRunOpts} from '../RequestTracker';
-import type {Bundle, PackagedBundleInfo, ParcelOptions} from '../types';
+import type {
+  Bundle,
+  InternalDiagnosticWithLevel,
+  PackagedBundleInfo,
+  ParcelOptions,
+} from '../types';
 import type BundleGraph from '../BundleGraph';
 import type {BundleInfo} from '../PackagerRunner';
 import type {ConfigAndCachePath} from './ParcelConfigRequest';
@@ -39,6 +43,7 @@ import {
 } from './DevDepRequest';
 import ParcelConfig from '../ParcelConfig';
 import ThrowableDiagnostic, {errorToDiagnostic} from '@parcel/diagnostic';
+import {toInternalDiagnosticWithLevel} from '../utils';
 
 const BOUNDARY_LENGTH = HASH_REF_PREFIX.length + 32 - 1;
 
@@ -210,7 +215,7 @@ async function writeFiles(
   writeOptions: ?FileOptions,
   devDeps: Map<string, string>,
   api: RunAPI<PackagedBundleInfo>,
-  diagnostics: Array<DiagnosticWithLevel>,
+  diagnostics: Array<InternalDiagnosticWithLevel>,
 ) {
   let compressors = await config.getCompressors(
     fromProjectPathRelative(filePath),
@@ -250,7 +255,7 @@ async function runCompressor(
   writeOptions: ?FileOptions,
   devDeps: Map<string, string>,
   api: RunAPI<PackagedBundleInfo>,
-  diagnostics: Array<DiagnosticWithLevel>,
+  diagnostics: Array<InternalDiagnosticWithLevel>,
 ) {
   try {
     let res = await compressor.plugin.compress({
@@ -261,7 +266,11 @@ async function runCompressor(
 
     if (res != null) {
       if (res.diagnostics) {
-        diagnostics.push(...res.diagnostics);
+        diagnostics.push(
+          ...res.diagnostics.map(d =>
+            toInternalDiagnosticWithLevel(options.projectRoot, d),
+          ),
+        );
       }
 
       await new Promise((resolve, reject) =>

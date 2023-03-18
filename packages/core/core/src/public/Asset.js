@@ -36,7 +36,10 @@ import {
   BundleBehavior as BundleBehaviorMap,
   BundleBehaviorNames,
 } from '../types';
-import {toInternalSourceLocation} from '../utils';
+import {
+  toInternalSourceLocation,
+  toInternalDiagnosticWithLevel,
+} from '../utils';
 
 const inspect = Symbol.for('nodejs.util.inspect.custom');
 
@@ -284,9 +287,18 @@ export class MutableAsset extends BaseAsset implements IMutableAsset {
     diagnostic: DiagnosticWithLevel | Array<DiagnosticWithLevel>,
   ): void {
     if (Array.isArray(diagnostic)) {
-      this.#asset.diagnostics.push(...diagnostic);
+      this.#asset.diagnostics.push(
+        ...diagnostic.map(d =>
+          toInternalDiagnosticWithLevel(this.#asset.options.projectRoot, d),
+        ),
+      );
     } else {
-      this.#asset.diagnostics.push(diagnostic);
+      this.#asset.diagnostics.push(
+        toInternalDiagnosticWithLevel(
+          this.#asset.options.projectRoot,
+          diagnostic,
+        ),
+      );
     }
   }
 

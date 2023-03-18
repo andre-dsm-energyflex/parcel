@@ -10,12 +10,12 @@ import type {
   Async,
 } from '@parcel/types';
 import type SourceMap from '@parcel/source-map';
-import type {DiagnosticWithLevel} from '@parcel/diagnostic';
 
 import type {
   Bundle as InternalBundle,
   Config,
   DevDepRequest,
+  InternalDiagnosticWithLevel,
   ParcelOptions,
   ReportFn,
   RequestInvalidation,
@@ -61,7 +61,7 @@ import {
 } from './requests/DevDepRequest';
 import {createBuildCache} from './buildCache';
 import {getInvalidationId, getInvalidationHash} from './assetUtils';
-import {optionsProxy} from './utils';
+import {optionsProxy, toInternalDiagnosticWithLevel} from './utils';
 import {invalidateDevDeps} from './requests/DevDepRequest';
 
 type Opts = {|
@@ -87,7 +87,7 @@ export type BundleInfo = {|
   +time?: number,
   +cacheKeys: CacheKeyMap,
   +isLargeBlob: boolean,
-  +diagnostics: Array<DiagnosticWithLevel>,
+  +diagnostics: Array<InternalDiagnosticWithLevel>,
 |};
 
 type CacheKeyMap = {|
@@ -343,7 +343,7 @@ export default class PackagerRunner {
     type: string,
     contents: Blob,
     map: ?string,
-    diagnostics: Array<DiagnosticWithLevel>,
+    diagnostics: Array<InternalDiagnosticWithLevel>,
   |}> {
     let packaged: BundleResult = await this.package(
       bundle,
@@ -352,7 +352,7 @@ export default class PackagerRunner {
       bundleConfigs,
     );
     let type = packaged.type ?? bundle.type;
-    let res = await this.optimize(
+    let res: BundleResult = await this.optimize(
       bundle,
       bundleGraph,
       type,
@@ -366,6 +366,9 @@ export default class PackagerRunner {
     if (res.diagnostics) {
       diagnostics.push(...res.diagnostics);
     }
+    diagnostics = diagnostics.map(d =>
+      toInternalDiagnosticWithLevel(this.options.projectRoot, d),
+    );
 
     let map =
       res.map != null ? await this.generateSourceMap(bundle, res.map) : null;
@@ -728,7 +731,7 @@ export default class PackagerRunner {
     type: string,
     contents: Blob,
     map: ?string,
-    diagnostics: Array<DiagnosticWithLevel>,
+    diagnostics: Array<InternalDiagnosticWithLevel>,
   ): Promise<BundleInfo> {
     let size = 0;
     let hash;

@@ -1,6 +1,6 @@
 // @flow strict-local
 
-import type {Diagnostic, DiagnosticWithLevel} from '@parcel/diagnostic';
+import type {Diagnostic} from '@parcel/diagnostic';
 import type {ContentKey, NodeId} from '@parcel/graph';
 import type {Async, Symbol, Meta} from '@parcel/types';
 import type {SharedReference} from '@parcel/workers';
@@ -14,6 +14,7 @@ import type {
   DependencyNode,
   Entry,
   InternalSourceLocation,
+  InternalDiagnosticWithLevel,
   ParcelOptions,
   Target,
 } from '../types';
@@ -53,7 +54,7 @@ type AssetGraphRequestResult = {|
   assetGraph: AssetGraph,
   changedAssets: Map<string, Asset>,
   assetRequests: Array<AssetGroup>,
-  diagnostics: Map<ContentKey, Array<DiagnosticWithLevel>>,
+  diagnostics: Map<ContentKey, Array<InternalDiagnosticWithLevel>>,
 |};
 
 type RunInput = {|
@@ -115,7 +116,7 @@ export class AssetGraphBuilder {
   shouldBuildLazily: boolean;
   requestedAssetIds: Set<string>;
   isSingleChangeRebuild: boolean;
-  diagnostics: Map<ContentKey, Array<DiagnosticWithLevel>>;
+  diagnostics: Map<ContentKey, Array<InternalDiagnosticWithLevel>>;
 
   constructor(
     {input, api, options}: RunInput,
@@ -467,10 +468,7 @@ export class AssetGraphBuilder {
             ? loc1.filePath === loc2.filePath
               ? [
                   {
-                    filePath: fromProjectPath(
-                      this.options.projectRoot,
-                      loc1.filePath,
-                    ),
+                    filePath: loc1.filePath,
                     codeHighlights: [
                       {start: loc1.start, end: loc1.end},
                       {start: loc2.start, end: loc2.end},
@@ -479,17 +477,11 @@ export class AssetGraphBuilder {
                 ]
               : [
                   {
-                    filePath: fromProjectPath(
-                      this.options.projectRoot,
-                      loc1.filePath,
-                    ),
+                    filePath: loc1.filePath,
                     codeHighlights: [{start: loc1.start, end: loc1.end}],
                   },
                   {
-                    filePath: fromProjectPath(
-                      this.options.projectRoot,
-                      loc2.filePath,
-                    ),
+                    filePath: loc2.filePath,
                     codeHighlights: [{start: loc2.start, end: loc2.end}],
                   },
                 ]

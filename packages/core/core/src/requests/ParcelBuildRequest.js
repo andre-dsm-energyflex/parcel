@@ -3,11 +3,15 @@
 import type {ContentKey} from '@parcel/graph';
 import type {Async} from '@parcel/types';
 import type {SharedReference} from '@parcel/workers';
-import type {DiagnosticWithLevel} from '@parcel/diagnostic';
 import type {AbortSignal} from 'abortcontroller-polyfill/dist/cjs-ponyfill';
 
 import type {StaticRunOpts} from '../RequestTracker';
-import type {Asset, AssetGroup, PackagedBundleInfo} from '../types';
+import type {
+  Asset,
+  AssetGroup,
+  InternalDiagnosticWithLevel,
+  PackagedBundleInfo,
+} from '../types';
 import type BundleGraph from '../BundleGraph';
 
 import createBundleGraphRequest, {
@@ -33,7 +37,7 @@ type ParcelBuildRequestResult = {|
   bundleInfo: Map<string, PackagedBundleInfo>,
   changedAssets: Map<string, Asset>,
   assetRequests: Array<AssetGroup>,
-  diagnostics: Array<DiagnosticWithLevel>,
+  diagnostics: Array<InternalDiagnosticWithLevel>,
 |};
 
 type RunInput<TResult> = {|

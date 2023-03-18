@@ -11,11 +11,11 @@ import type {
   Config,
   DevDepRequest,
   ParcelOptions,
+  InternalDiagnosticWithLevel,
 } from '../types';
 import type {ConfigAndCachePath} from './ParcelConfigRequest';
 import type {AbortSignal} from 'abortcontroller-polyfill/dist/cjs-ponyfill';
 import type {ContentKey} from '@parcel/graph';
-import type {DiagnosticWithLevel} from '@parcel/diagnostic';
 
 import invariant from 'assert';
 import assert from 'assert';
@@ -76,7 +76,7 @@ export type BundleGraphResult = {|
   bundleGraph: InternalBundleGraph,
   changedAssets: Map<string, Asset>,
   assetRequests: Array<AssetGroup>,
-  diagnostics: Array<DiagnosticWithLevel>,
+  diagnostics: Array<InternalDiagnosticWithLevel>,
 |};
 
 type BundleGraphRequest = {|
@@ -244,7 +244,7 @@ class BundlerRunner {
     graph: AssetGraph,
     changedAssets: Map<string, Asset>,
     assetRequests: Array<AssetGroup>,
-    diagnostics: Map<ContentKey, Array<DiagnosticWithLevel>>,
+    diagnostics: Map<ContentKey, Array<InternalDiagnosticWithLevel>>,
   |}): Promise<BundleGraphResult> {
     report({
       type: 'buildProgress',

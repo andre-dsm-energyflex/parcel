@@ -9,13 +9,13 @@ import type {
   PackageName,
   TransformerResult,
 } from '@parcel/types';
-import type {DiagnosticWithLevel} from '@parcel/diagnostic';
 import type {
   Asset,
   RequestInvalidation,
   Dependency,
   ParcelOptions,
   InternalFileCreateInvalidation,
+  InternalDiagnosticWithLevel,
 } from './types';
 
 import invariant from 'assert';
@@ -41,7 +41,10 @@ import {
   getInvalidationHash,
 } from './assetUtils';
 import {BundleBehaviorNames} from './types';
-import {invalidateOnFileCreateToInternal} from './utils';
+import {
+  invalidateOnFileCreateToInternal,
+  toInternalDiagnosticWithLevel,
+} from './utils';
 import {type ProjectPath, fromProjectPath} from './projectPath';
 
 type UncommittedAssetOptions = {|
@@ -54,7 +57,7 @@ type UncommittedAssetOptions = {|
   idBase?: ?string,
   invalidations?: Map<string, RequestInvalidation>,
   fileCreateInvalidations?: Array<InternalFileCreateInvalidation>,
-  diagnostics?: Array<DiagnosticWithLevel>,
+  diagnostics?: Array<InternalDiagnosticWithLevel>,
 |};
 
 export default class UncommittedAsset {
@@ -70,7 +73,7 @@ export default class UncommittedAsset {
   invalidations: Map<string, RequestInvalidation>;
   fileCreateInvalidations: Array<InternalFileCreateInvalidation>;
   generate: ?() => Promise<GenerateOutput>;
-  diagnostics: Array<DiagnosticWithLevel>;
+  diagnostics: Array<InternalDiagnosticWithLevel>;
 
   constructor({
     value,
@@ -434,7 +437,12 @@ export default class UncommittedAsset {
       idBase: this.idBase,
       invalidations: this.invalidations,
       fileCreateInvalidations: this.fileCreateInvalidations,
-      diagnostics: [...this.diagnostics, ...(result.diagnostics ?? [])],
+      diagnostics: [
+        ...this.diagnostics,
+        ...(result.diagnostics?.map(d =>
+          toInternalDiagnosticWithLevel(this.options.projectRoot, d),
+        ) ?? []),
+      ],
     });
 
     let dependencies = result.dependencies;
