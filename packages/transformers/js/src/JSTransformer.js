@@ -1,7 +1,7 @@
 // @flow
 import type {JSONObject, EnvMap} from '@parcel/types';
 import type {SchemaEntity} from '@parcel/utils';
-import type {Diagnostic} from '@parcel/diagnostic';
+import type {DiagnosticWithLevel, DiagnosticLevel} from '@parcel/diagnostic';
 import SourceMap from '@parcel/source-map';
 import {Transformer} from '@parcel/plugin';
 import {init, transform} from '../native';
@@ -288,7 +288,7 @@ export default (new Transformer({
       useDefineForClassFields,
     };
   },
-  async transform({asset, config, options, logger}) {
+  async transform({asset, config, options}) {
     let [code, originalMap] = await Promise.all([
       asset.getBuffer(),
       asset.getMap(),
@@ -455,9 +455,12 @@ export default (new Transformer({
       );
       let warnings = diagnostics.filter(
         d =>
-          d.severity === 'Warning' ||
-          (d.severity === 'SourceError' && !asset.isSource),
+          !(
+            d.severity === 'Error' ||
+            (d.severity === 'SourceError' && asset.isSource)
+          ),
       );
+
       let convertDiagnostic = diagnostic => {
         let message = diagnostic.message;
         if (message === 'SCRIPT_ERROR') {
@@ -465,7 +468,7 @@ export default (new Transformer({
           message = err?.message || SCRIPT_ERRORS.browser.message;
         }
 
-        let res: Diagnostic = {
+        let res: DiagnosticWithLevel = {
           message,
           codeFrames: [
             {
@@ -481,6 +484,7 @@ export default (new Transformer({
             },
           ],
           hints: diagnostic.hints,
+          level: convertSeverity(asset.isSource, diagnostic.severity),
         };
 
         if (diagnostic.documentation_url) {
@@ -520,7 +524,7 @@ export default (new Transformer({
         });
       }
 
-      logger.warn(warnings.map(convertDiagnostic));
+      asset.addDiagnostic(warnings.map(convertDiagnostic));
     }
 
     if (shebang) {
@@ -873,6 +877,34 @@ export default (new Transformer({
     asset.type = 'js';
     asset.setBuffer(compiledCode);
 
+    if (code.toString().includes('warning1')) {
+      let s = code.toString();
+      let pos = s.indexOf('warning1');
+      let before = s.slice(0, pos);
+      let beforeLines = before.split('\n');
+      let startLine = beforeLines.length;
+      let startCol = beforeLines[beforeLines.length - 1].length + 1;
+      asset.addDiagnostic({
+        message: 'Some problem',
+        codeFrames: [
+          {
+            filePath: asset.filePath,
+            codeHighlights: [
+              {
+                start: {line: startLine, column: startCol},
+                end: {
+                  line: startLine,
+                  column: startCol + 'warning1'.length - 1,
+                },
+                message: 'here',
+              },
+            ],
+          },
+        ],
+        level: 'warn',
+      });
+    }
+
     if (map) {
       let sourceMap = new SourceMap(options.projectRoot);
       sourceMap.addVLQMap(JSON.parse(map));
@@ -885,6 +917,19 @@ export default (new Transformer({
     return [asset];
   },
 }): Transformer);
+
+function convertSeverity(
+  isSource: boolean,
+  severity: 'Error' | 'Warning' | 'SourceError' | 'Verbose',
+): DiagnosticLevel {
+  if (severity === 'Error' || (severity === 'SourceError' && isSource)) {
+    return 'error';
+  } else if (severity === 'Warning' || severity === 'SourceError') {
+    return 'warn';
+  } else {
+    return 'verbose';
+  }
+}
 
 // On linux with older versions of glibc (e.g. CentOS 7), we encounter a segmentation fault
 // when worker threads exit due to thread local variables used by SWC. A workaround is to
