@@ -25,7 +25,6 @@ import invariant from 'assert';
 import nullthrows from 'nullthrows';
 import {PromiseQueue} from '@parcel/utils';
 import {hashString} from '@parcel/hash';
-import logger from '@parcel/logger';
 import ThrowableDiagnostic, {md} from '@parcel/diagnostic';
 import {BundleBehavior, Priority} from '../types';
 import AssetGraph from '../AssetGraph';
@@ -445,18 +444,58 @@ export class AssetGraphBuilder {
       depNode1,
       depNode2,
     ) => {
-      if (this.options.logLevel === 'verbose') {
-        logger.warn({
-          message: `${fromProjectPathRelative(
-            assetNode.value.filePath,
-          )} reexports "${symbol}", which could be resolved either to the dependency "${
-            depNode1.value.specifier
-          }" or "${
-            depNode2.value.specifier
-          }" at runtime. Adding a namespace object to fall back on.`,
-          origin: '@parcel/core',
-        });
+      let v = this.diagnostics.get(assetNode.value.id);
+      if (!v) {
+        v = [];
+        this.diagnostics.set(assetNode.value.id, v);
       }
+
+      let loc1 = depNode1.value.loc;
+      let loc2 = depNode2.value.loc;
+
+      v.push({
+        message: `${fromProjectPathRelative(
+          assetNode.value.filePath,
+        )} reexports "${symbol}", which could be resolved either to the dependency "${
+          depNode1.value.specifier
+        }" or "${
+          depNode2.value.specifier
+        }" at runtime. Adding a namespace object to fall back on.`,
+        origin: '@parcel/core',
+        codeFrames:
+          loc1 && loc2
+            ? loc1.filePath === loc2.filePath
+              ? [
+                  {
+                    filePath: fromProjectPath(
+                      this.options.projectRoot,
+                      loc1.filePath,
+                    ),
+                    codeHighlights: [
+                      {start: loc1.start, end: loc1.end},
+                      {start: loc2.start, end: loc2.end},
+                    ],
+                  },
+                ]
+              : [
+                  {
+                    filePath: fromProjectPath(
+                      this.options.projectRoot,
+                      loc1.filePath,
+                    ),
+                    codeHighlights: [{start: loc1.start, end: loc1.end}],
+                  },
+                  {
+                    filePath: fromProjectPath(
+                      this.options.projectRoot,
+                      loc2.filePath,
+                    ),
+                    codeHighlights: [{start: loc2.start, end: loc2.end}],
+                  },
+                ]
+            : undefined,
+        level: 'verbose',
+      });
     };
 
     // Because namespace reexports introduce ambiguity, go up the graph from the leaves to the
