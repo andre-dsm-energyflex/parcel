@@ -54,6 +54,7 @@ type AssetGraphRequestResult = {|
   assetGraph: AssetGraph,
   changedAssets: Map<string, Asset>,
   assetRequests: Array<AssetGroup>,
+  targetDiagnostics: Array<InternalDiagnosticWithLevel>,
   diagnostics: Map<ContentKey, Array<InternalDiagnosticWithLevel>>,
 |};
 
@@ -116,6 +117,7 @@ export class AssetGraphBuilder {
   shouldBuildLazily: boolean;
   requestedAssetIds: Set<string>;
   isSingleChangeRebuild: boolean;
+  targetDiagnostics: Array<InternalDiagnosticWithLevel>;
   diagnostics: Map<ContentKey, Array<InternalDiagnosticWithLevel>>;
 
   constructor(
@@ -204,6 +206,7 @@ export class AssetGraphBuilder {
       {
         assetGraph: this.assetGraph,
         changedAssets: new Map(),
+        targetDiagnostics: this.targetDiagnostics,
         diagnostics: this.diagnostics,
         assetRequests: [],
       },
@@ -252,6 +255,7 @@ export class AssetGraphBuilder {
       assetGraph: this.assetGraph,
       changedAssets: this.changedAssets,
       assetRequests: this.assetRequests,
+      targetDiagnostics: this.targetDiagnostics,
       diagnostics: this.diagnostics,
     };
   }
@@ -1008,9 +1012,16 @@ export class AssetGraphBuilder {
 
   async runTargetRequest(input: Entry) {
     let request = createTargetRequest(input);
-    let targets = await this.api.runRequest<Entry, Array<Target>>(request, {
+    let {targets, diagnostics} = await this.api.runRequest<
+      Entry,
+      {|
+        targets: Array<Target>,
+        diagnostics: Array<InternalDiagnosticWithLevel>,
+      |},
+    >(request, {
       force: true,
     });
+    this.targetDiagnostics = diagnostics;
     this.assetGraph.resolveTargets(request.input, targets, request.id);
   }
 
