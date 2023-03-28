@@ -43,3 +43,5 @@ export async function load({
 
   return {isStatic: !isDynamic, config: configContents};
 }
+
+configContents.javascriptEnabled = true
